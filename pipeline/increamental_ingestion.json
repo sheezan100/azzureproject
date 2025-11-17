@@ -31,7 +31,7 @@
 					"source": {
 						"type": "AzureSqlSource",
 						"sqlReaderQuery": {
-							"value": "@concat(\n    'select * from ',\n    pipeline().parameters.schema, '.',\n    pipeline().parameters.table,\n    ' where ',\n    pipeline().parameters.cdc,\n    ' > ''',\n    activity('Lookup1').output.firstRow.cdc,\n    ''''\n)",
+							"value": "@concat(\n    'SELECT * FROM ',\n    pipeline().parameters.schema, '.', pipeline().parameters.table,\n    ' WHERE ',\n    pipeline().parameters.cdc, ' > ''',\n    if(\n        empty(pipeline().parameters.from_date),\n        activity('Lookup1').output.firstRow.cdc,\n        pipeline().parameters.from_date\n    ),\n    ''''\n)",
 							"type": "Expression"
 						},
 						"queryTimeout": "02:00:00",
@@ -68,7 +68,10 @@
 						"type": "DatasetReference",
 						"parameters": {
 							"container": "bronze",
-							"folder": "User",
+							"folder": {
+								"value": "@pipeline().parameters.table",
+								"type": "Expression"
+							},
 							"file": {
 								"value": "@concat(pipeline().parameters.table, '_', variables('current_time'))",
 								"type": "Expression"
@@ -130,7 +133,7 @@
 				}
 			},
 			{
-				"name": "If Condition1",
+				"name": "increamental_loading",
 				"type": "IfCondition",
 				"dependsOn": [
 					{
@@ -142,6 +145,45 @@
 				],
 				"userProperties": [],
 				"typeProperties": {
+					"expression": {
+						"value": "@greater(activity('Copy data1').output.dataRead, 0)",
+						"type": "Expression"
+					},
+					"ifFalseActivities": [
+						{
+							"name": "Delete1",
+							"type": "Delete",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"dataset": {
+									"referenceName": "parque_dynamic",
+									"type": "DatasetReference",
+									"parameters": {
+										"container": "bronze",
+										"folder": {
+											"value": "@pipeline().parameters.table",
+											"type": "Expression"
+										},
+										"file": "@concat(pipeline().parameters.table, '_', variables('current_time'))"
+									}
+								},
+								"enableLogging": false,
+								"storeSettings": {
+									"type": "AzureBlobFSReadSettings",
+									"recursive": true,
+									"enablePartitionDiscovery": false
+								}
+							}
+						}
+					],
 					"ifTrueActivities": [
 						{
 							"name": "update_last_cdc",
@@ -262,6 +304,9 @@
 			"cdc": {
 				"type": "string",
 				"defaultValue": "updated_at"
+			},
+			"from_date": {
+				"type": "string"
 			}
 		},
 		"variables": {
